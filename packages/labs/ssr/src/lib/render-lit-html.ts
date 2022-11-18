@@ -476,9 +476,20 @@ const getTemplateOpcodes = (result: TemplateResult) => {
         }
 
         if (ctor !== undefined) {
-          ops.push({
-            type: 'custom-element-shadow',
-          });
+          // Check if shadowdom is skipped
+          // I realize the check for 'return this' is flawed.
+          // But I cannot think of something better without having to 'eval' the method (to catch all cases)
+          // So suggestions are welcome
+          if(!ctor.prototype.createRenderRoot.toString().includes('return this')) {
+              ops.push({
+                  type: 'custom-element-shadow',
+              });
+          }
+          else {
+              ops.push({
+                  type: 'custom-element-no-shadow',
+              });
+          }          
         }
         nodeIndex++;
       }
@@ -756,6 +767,26 @@ function* renderTemplateResult(
             yield '<template shadowroot="open">';
             yield* shadowContents;
             yield '</template>';
+          }
+          renderInfo.customElementHostStack.pop();
+        }
+        break;
+      }
+      case 'custom-element-no-shadow': {
+        const instance = getLast(renderInfo.customElementInstanceStack);
+        if (instance === undefined) {
+          throw new Error(
+            `Internal error: ${op.type} outside of custom element context`
+          );
+        }
+        if (instance.renderShadow !== undefined) {
+          renderInfo.customElementHostStack.push(instance);
+          const shadowContents = instance.renderShadow(renderInfo);
+          // Only emit a DSR if renderShadow() emitted something (returning
+          // undefined allows effectively no-op rendering the element)
+          if (shadowContents !== undefined) {
+            // do not render template tag. see createRenderRoot
+            yield* shadowContents;
           }
           renderInfo.customElementHostStack.pop();
         }
